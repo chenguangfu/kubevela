@@ -19,6 +19,8 @@ package application
 import (
 	"context"
 
+	terraformtypes "github.com/oam-dev/terraform-controller/api/types"
+	terraformapi "github.com/oam-dev/terraform-controller/api/v1beta1"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,15 +28,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	terraformtypes "github.com/oam-dev/terraform-controller/api/types"
-	terraformapi "github.com/oam-dev/terraform-controller/api/v1beta1"
-
 	"github.com/oam-dev/kubevela/apis/core.oam.dev/common"
 	"github.com/oam-dev/kubevela/apis/core.oam.dev/v1beta1"
 	"github.com/oam-dev/kubevela/apis/types"
 	"github.com/oam-dev/kubevela/pkg/appfile"
 	"github.com/oam-dev/kubevela/pkg/controller/core.oam.dev/v1alpha2/applicationrollout"
 	"github.com/oam-dev/kubevela/pkg/controller/utils"
+	monitorContext "github.com/oam-dev/kubevela/pkg/monitor/context"
+	"github.com/oam-dev/kubevela/pkg/monitor/metrics"
 	"github.com/oam-dev/kubevela/pkg/multicluster"
 	oamutil "github.com/oam-dev/kubevela/pkg/oam/util"
 	"github.com/oam-dev/kubevela/pkg/resourcekeeper"
@@ -59,6 +60,12 @@ type AppHandler struct {
 
 // NewAppHandler create new app handler
 func NewAppHandler(ctx context.Context, r *Reconciler, app *v1beta1.Application, parser *appfile.Parser) (*AppHandler, error) {
+	if ctx, ok := ctx.(monitorContext.Context); ok {
+		subCtx := ctx.Fork("create-app-handler", monitorContext.DurationMetric(func(v float64) {
+			metrics.CreateAppHandlerDurationHistogram.WithLabelValues("application").Observe(v)
+		}))
+		defer subCtx.Commit("finish create appHandler")
+	}
 	resourceHandler, err := resourcekeeper.NewResourceKeeper(ctx, r.Client, app)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create resourceKeeper")
